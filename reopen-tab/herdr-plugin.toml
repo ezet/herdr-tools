@@ -1,0 +1,19 @@
+id = "reopen-tab"
+name = "reopen-tab"
+version = "1.0.0"
+min_herdr_version = "0.7.0"
+description = "Reopen the last closed tab, its panes, layout and Claude sessions"
+platforms = ["linux", "macos"]
+
+# herdr's tab_closed event carries only ids, and by the time it fires the tab's
+# panes, cwds and session ids are already gone from the session snapshot. So the
+# watcher keeps a live cache ahead of the close; an event hook alone cannot.
+[[startup]]
+command = ["python3", "scripts/watcher.py"]
+
+[[actions]]
+id = "reopen"
+title = "Reopen closed tab"
+description = "Reopen the most recently closed tab, resuming its agent sessions"
+contexts = ["global", "workspace"]
+command = ["python3", "scripts/reopen.py"]

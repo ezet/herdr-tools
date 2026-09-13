@@ -1,0 +1,13 @@
+id = "restart-agent"
+name = "restart-agent"
+version = "1.0.0"
+min_herdr_version = "0.7.0"
+description = "Restart the focused pane's Claude agent in place, resuming the same session"
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "restart"
+title = "Restart agent"
+description = "Restart the focused pane's Claude agent, resuming the same session"
+contexts = ["global", "workspace", "pane"]
+command = ["sh", "scripts/restart-agent.sh"]
