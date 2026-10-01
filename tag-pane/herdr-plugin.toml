@@ -1,0 +1,13 @@
+id = "tag-pane"
+name = "tag-pane"
+version = "1.0.0"
+min_herdr_version = "0.8.0"
+description = "Toggle a tag dot on the focused pane, shown in the agent sidebar"
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "toggle"
+title = "Toggle tag"
+description = "Tag or untag the focused pane"
+contexts = ["global", "workspace", "pane"]
+command = ["sh", "scripts/toggle-tag.sh"]

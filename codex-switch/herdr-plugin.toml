@@ -1,0 +1,20 @@
+id = "codex-switch"
+name = "codex-switch"
+version = "1.0.0"
+min_herdr_version = "0.8.0"
+description = "Codex account manager and quota dashboard, in a herdr popup"
+platforms = ["linux", "macos"]
+
+[[panes]]
+id = "tui"
+title = "codex-switch"
+description = "Codex accounts, quota pools, and spend-control status"
+placement = "popup"
+command = ["codex-switch", "tui"]
+
+[[actions]]
+id = "open"
+title = "Open codex-switch"
+description = "Open the codex-switch dashboard in a popup"
+contexts = ["global", "workspace"]
+command = ["sh", "scripts/open-pane.sh"]

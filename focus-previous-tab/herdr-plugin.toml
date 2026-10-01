@@ -1,0 +1,19 @@
+id = "focus-previous-tab"
+name = "focus-previous-tab"
+version = "1.0.0"
+min_herdr_version = "0.7.0"
+description = "When the focused tab closes, focus the tab you were on before it"
+platforms = ["linux", "macos"]
+
+# herdr always hands focus to the closed tab's left neighbour, and there is no
+# config for it. So a watcher keeps the focus history and overrides that choice.
+[[startup]]
+command = ["python3", "scripts/watcher.py"]
+
+# The same history, on a key: jump back to the tab you were on before.
+[[actions]]
+id = "last"
+title = "Last tab"
+description = "Focus the tab you were on before this one, in any workspace"
+contexts = ["global", "workspace", "pane"]
+command = ["sh", "scripts/last-tab.sh"]
