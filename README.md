@@ -21,6 +21,12 @@ herdr plugin install ezet/herdr-tools/tag-pane
 A herdr plugin cannot declare its own keybinding, so after installing, add the
 key to `~/.config/herdr/config.toml` yourself — see each plugin's README.
 
+herdr runs a plugin's `[[startup]]` process only when the server starts. After
+installing a plugin into a running server, start its watcher by hand (`setsid nohup
+python3 scripts/watcher.py` in the plugin's directory); after the next server
+restart, SIGTERM the copy whose parent is not `herdr server`, or two watchers will
+race on the same state.
+
 Requires herdr 0.7.0+ (0.8.0+ for `tag-pane`) and Linux or macOS.
 `restart-agent` and `reopen-tab` need `claude` on `PATH`, plus `jq` and
 `python3` respectively; `focus-previous-tab` needs `python3` and `jq`; and
