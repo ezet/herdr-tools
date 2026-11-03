@@ -46,7 +46,16 @@ RECONNECT_SECONDS = 3.0
 # vanishing at once, no events) still records nothing.
 GRACE_SECONDS = 60.0
 
-CLOSE_SUBSCRIPTIONS = [{"type": "tab.closed"}, {"type": "workspace.closed"}]
+# A pane that closes or exits sends `pane_closed` or `pane_exited` -- and when
+# it was a tab's last pane, nothing else: the tab gets no `tab_closed`. So a pane
+# event is resolved against the snapshot: the tab vanished with it (a tab
+# close), or the tab is still open without it (a pane close).
+CLOSE_SUBSCRIPTIONS = [
+    {"type": "tab.closed"},
+    {"type": "workspace.closed"},
+    {"type": "pane.closed"},
+    {"type": "pane.exited"},
+]
 
 
 def log(message):
@@ -165,20 +174,41 @@ class History:
         # tab_id -> (record, deadline); held back in case a workspace close
         # arrives and wants to absorb them.
         self.pending = {}
+        # pane_id -> (record of its tab as last seen with it, expiry) for panes
+        # that have left the snapshot.
+        self.recent_panes = {}
+        # pane_id -> expiry for panes whose close event came while the snapshot
+        # still showed them.
+        self.suspects = {}
 
     def refresh(self):
         snapshot = HerdrSocket.request("session.snapshot")["snapshot"]
         records = tab_records(snapshot)
+        live_panes = {p["pane_id"] for r in records.values() for p in r["panes"]}
         now = time.monotonic()
         with self.lock:
             for tab_id, record in self.cache.items():
                 if tab_id not in records:
                     self.recent[tab_id] = (record, now + GRACE_SECONDS)
+                for pane in record["panes"]:
+                    if pane["pane_id"] not in live_panes:
+                        self.recent_panes[pane["pane_id"]] = (record, now + GRACE_SECONDS)
             self.recent = {
                 t: v for t, v in self.recent.items()
                 if v[1] > now and t not in records
             }
+            self.recent_panes = {
+                p: v for p, v in self.recent_panes.items()
+                if v[1] > now and p not in live_panes
+            }
             self.cache = records
+            outcomes = [
+                self._resolve_pane(p) for p in list(self.suspects)
+                if p in self.recent_panes
+            ]
+            self.suspects = {p: v for p, v in self.suspects.items() if v > now}
+        for outcome in outcomes:
+            self._apply(outcome)
 
     def _take(self, tab_id):
         record = self.cache.pop(tab_id, None)
@@ -195,6 +225,54 @@ class History:
                 # a tab that never lived long enough to be cached.
                 return
             self.pending[tab_id] = (record, time.monotonic() + GROUPING_SECONDS)
+
+    def on_pane_gone(self, pane_id):
+        with self.lock:
+            if pane_id in self.recent_panes:
+                outcome = self._resolve_pane(pane_id)
+            else:
+                if any(
+                    p["pane_id"] == pane_id
+                    for r in self.cache.values() for p in r["panes"]
+                ):
+                    self.suspects[pane_id] = time.monotonic() + GRACE_SECONDS
+                return
+        self._apply(outcome)
+
+    def _resolve_pane(self, pane_id):
+        """Under the lock: a gone pane either took its tab with it, or left a
+        tab that is still open. A tab already recorded some other way wins."""
+        self.suspects.pop(pane_id, None)
+        record, _ = self.recent_panes.pop(pane_id)
+        tab_id = record["tab_id"]
+        if tab_id in self.recent:
+            return ("tab", tab_id)
+        if tab_id not in self.cache:
+            return None
+        pane = next(p for p in record["panes"] if p["pane_id"] == pane_id)
+        rect = next(
+            (r["rect"] for r in record["rects"] if r["pane_id"] == pane_id), None
+        )
+        return ("pane", {
+            "kind": "pane",
+            "closed_at": time.time(),
+            "workspace_id": record["workspace_id"],
+            "workspace_label": record.get("workspace_label", ""),
+            "tab_id": tab_id,
+            "tab_label": record.get("label", ""),
+            "pane": pane,
+            "rect": rect,
+        })
+
+    def _apply(self, outcome):
+        if outcome is None:
+            return
+        kind, value = outcome
+        if kind == "tab":
+            self.on_tab_closed(value)
+        else:
+            push_entries([value])
+            log(f"recorded closed pane {value['pane']['pane_id']} of {value['tab_id']}")
 
     def on_workspace_closed(self, workspace_id, workspace):
         now = time.time()
@@ -283,6 +361,8 @@ def run():
                 kind = data.get("type")
                 if kind == "tab_closed":
                     history.on_tab_closed(data["tab_id"])
+                elif kind in ("pane_closed", "pane_exited"):
+                    history.on_pane_gone(data["pane_id"])
                 elif kind == "workspace_closed":
                     history.on_workspace_closed(
                         data["workspace_id"], data.get("workspace")

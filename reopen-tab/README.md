@@ -1,9 +1,11 @@
 # reopen-tab
 
-Undo-close for herdr tabs, like a browser's `Ctrl+Shift+T`. Brings back the
-tab's panes, their split geometry and cwds, and resumes every Claude session
-those panes were holding. Repeated presses walk back through the stack; a closed
-workspace comes back in one press, all its tabs at once.
+Undo-close for herdr panes and tabs, like a browser's `Ctrl+Shift+T`. A closed
+tab comes back with its panes, their split geometry and cwds; a pane closed out
+of a tab that is still open is split back into it where it sat. Every Claude
+session those panes were holding is resumed. Repeated presses walk back through
+one stack of panes and tabs; a closed workspace comes back in one press, all its
+tabs at once.
 
 ## How it works
 
@@ -13,8 +15,11 @@ event hook alone cannot record enough to rebuild the tab.
 
 Instead the plugin's `[[startup]]` process keeps a live cache of every tab,
 refreshed over herdr's socket, and subscribes to `tab.closed` /
-`workspace.closed`. On a close it pushes the last-known record onto a stack in
-the plugin's state directory, which the `reopen` action pops.
+`workspace.closed`. A tab that goes because its last pane closed or exited gets
+no `tab_closed`, only `pane_closed` / `pane_exited`, so those are watched too: the
+tab counts as closed once it leaves the snapshot. On a close it pushes the
+last-known record onto a stack in the plugin's state directory, which the
+`reopen` action pops.
 
 Layout is rebuilt from the recorded pane rectangles: herdr lays panes out as a
 BSP tree, so the geometry always has a guillotine cut, and the tree of splits

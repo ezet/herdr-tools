@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Reopen the most recently closed herdr tab, agent session and all.
+"""Reopen the most recently closed herdr pane or tab, agent session and all.
 
-Pops the newest entry recorded by the plugin's watcher, recreates the tab in its
-original workspace (its panes, their cwds and their split geometry), and
-relaunches every Claude pane into the session it was holding. Repeated runs walk
-further back through the stack.
+Pops the newest entry recorded by the plugin's watcher. A closed tab is
+recreated in its original workspace (its panes, their cwds and their split
+geometry); a pane closed out of a tab that is still open is split back into it.
+Every Claude pane is relaunched into the session it was holding. Repeated runs
+walk further back through the stack.
 
   reopen.py            reopen the newest entry
   reopen.py --list     show what is on the stack
@@ -235,10 +236,97 @@ def restore_tab(record, workspace_id, tab_id=None, pane_id=None, focus=True):
     for old_id, new_id in placed.items():
         if launch_agent(new_id, by_id[old_id]):
             resumed += 1
+    retarget(record["tab_id"], tab_id)
     return tab_id, resumed
 
 
+def retarget(old_tab_id, new_tab_id):
+    """Point older pane entries of a reopened tab at its new id, so they split
+    back into it rather than reopening as tabs of their own."""
+    with open(LOCK_PATH, "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            entries = read_stack()
+            for entry in entries:
+                if entry.get("kind") == "pane" and entry["tab_id"] == old_tab_id:
+                    entry["tab_id"] = new_tab_id
+            tmp = STACK_PATH + ".tmp"
+            with open(tmp, "w") as fh:
+                json.dump({"entries": entries}, fh, indent=1)
+            os.replace(tmp, STACK_PATH)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def _overlap(a, b):
+    w = min(a["x"] + a["width"], b["x"] + b["width"]) - max(a["x"], b["x"])
+    h = min(a["y"] + a["height"], b["y"] + b["height"]) - max(a["y"], b["y"])
+    return max(w, 0) * max(h, 0)
+
+
+def split_back(tab_id, pane, rect):
+    """Split the closed pane back into its tab, where it was. The pane that
+    took over most of its space is split along the side the closed pane sat
+    on; herdr only splits right or down, so a pane that sat left or above is
+    split off and swapped into place."""
+    layout = next(
+        (l for l in herdr("api", "snapshot")["snapshot"]["layouts"]
+         if l["tab_id"] == tab_id),
+        None,
+    )
+    if layout is None:
+        return None
+    anchor = max(layout["panes"], key=lambda p: _overlap(p["rect"], rect))
+    a = anchor["rect"]
+    if _overlap(a, rect) == 0:
+        return None
+    if rect["x"] > a["x"]:
+        direction, ratio, swap = "right", (rect["x"] - a["x"]) / a["width"], False
+    elif rect["y"] > a["y"]:
+        direction, ratio, swap = "down", (rect["y"] - a["y"]) / a["height"], False
+    elif rect["width"] < a["width"]:
+        direction, ratio, swap = "right", rect["width"] / a["width"], True
+    else:
+        direction, ratio, swap = "down", rect["height"] / a["height"], True
+    ratio = min(max(ratio, 0.1), 0.9)
+    args = ["pane", "split", anchor["pane_id"], "--direction", direction,
+            "--ratio", f"{ratio:.4f}"]
+    if pane.get("cwd"):
+        args += ["--cwd", pane["cwd"]]
+    new_pane = herdr(*args)["pane"]["pane_id"]
+    if swap:
+        herdr("pane", "swap", "--source-pane", new_pane,
+              "--target-pane", anchor["pane_id"])
+    return new_pane
+
+
+def restore_pane(entry):
+    pane = entry["pane"]
+    tabs = {t["tab_id"] for t in herdr("tab", "list")["tabs"]}
+    new_pane = None
+    if entry["tab_id"] in tabs and entry.get("rect"):
+        new_pane = split_back(entry["tab_id"], pane, entry["rect"])
+    if new_pane is None:
+        # The tab is gone (or the geometry no longer fits): reopen the pane
+        # as a tab of its own.
+        tab_entry = {
+            "kind": "tab",
+            "workspace_id": entry["workspace_id"],
+            "workspace_label": entry.get("workspace_label", ""),
+            "tabs": [{"label": entry.get("tab_label", ""), "panes": [pane],
+                      "rects": [], "tab_id": entry["tab_id"]}],
+        }
+        return restore_entry(tab_entry)
+    resumed = launch_agent(new_pane, pane)
+    body = pane.get("title") or pane.get("cwd") or ""
+    if resumed:
+        body = f"{body} - agent session resumed".strip(" -")
+    return "Reopened pane", body
+
+
 def restore_entry(entry):
+    if entry.get("kind") == "pane":
+        return restore_pane(entry)
     tabs = entry.get("tabs") or []
     if not tabs:
         return "Nothing to reopen", None
@@ -309,7 +397,8 @@ def main():
             return 0
         for i, entry in enumerate(entries):
             when = time.strftime("%H:%M:%S", time.localtime(entry.get("closed_at", 0)))
-            tabs = entry.get("tabs") or []
+            tabs = entry.get("tabs") or [{"panes": [entry.get("pane") or {}],
+                                          "tab_id": entry.get("tab_id")}]
             names = ", ".join(
                 (t.get("panes") or [{}])[0].get("title") or t.get("label") or t["tab_id"]
                 for t in tabs
