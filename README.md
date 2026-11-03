@@ -1,6 +1,6 @@
 # herdr-tools
 
-Four [herdr](https://herdr.dev) plugins for working with coding agents in panes.
+Five [herdr](https://herdr.dev) plugins for working with coding agents in panes.
 
 | Plugin | What it does |
 |--------|--------------|
@@ -8,6 +8,7 @@ Four [herdr](https://herdr.dev) plugins for working with coding agents in panes.
 | [`reopen-tab`](reopen-tab) | Reopen the last closed tab — panes, layout, cwds and Claude sessions |
 | [`focus-previous-tab`](focus-previous-tab) | Closing the focused tab returns to the tab you were on before it, not its left neighbour; a key jumps back to the last tab |
 | [`tag-pane`](tag-pane) | Toggle a tag dot on the focused pane, shown in the agent sidebar |
+| [`open-pr`](open-pr) | Open the focused pane's pull request in the browser |
 
 Each is an independent plugin with its own manifest; install any of them on its own.
 
@@ -16,6 +17,7 @@ herdr plugin install ezet/herdr-tools/restart-agent
 herdr plugin install ezet/herdr-tools/reopen-tab
 herdr plugin install ezet/herdr-tools/focus-previous-tab
 herdr plugin install ezet/herdr-tools/tag-pane
+herdr plugin install ezet/herdr-tools/open-pr
 ```
 
 A herdr plugin cannot declare its own keybinding, so after installing, add the
@@ -27,7 +29,7 @@ python3 scripts/watcher.py` in the plugin's directory); after the next server
 restart, SIGTERM the copy whose parent is not `herdr server`, or two watchers will
 race on the same state.
 
-Requires herdr 0.7.0+ (0.8.0+ for `tag-pane`) and Linux or macOS.
+Requires herdr 0.7.0+ (0.8.0+ for `tag-pane` and `open-pr`) and Linux or macOS.
 `restart-agent` and `reopen-tab` need `claude` on `PATH`, plus `jq` and
 `python3` respectively; `focus-previous-tab` needs `python3` and `jq`; and
-`tag-pane` needs `jq`.
+`tag-pane` needs `jq`; `open-pr` needs `jq`, `git` and `gh`.
