@@ -1,0 +1,21 @@
+id = "session-jump"
+name = "session-jump"
+version = "1.0.0"
+min_herdr_version = "0.9.0"
+description = "Search your Claude prompt history and jump to that prompt's session"
+platforms = ["linux", "macos"]
+
+# The picker: fzf over ~/.claude/history.jsonl in an overlay. Picking a prompt
+# focuses the pane still holding its session, or reopens the session in a tab.
+[[panes]]
+id = "picker"
+title = "Jump to session"
+placement = "overlay"
+command = ["python3", "scripts/session_jump.py", "pick"]
+
+[[actions]]
+id = "open"
+title = "Jump to session"
+description = "Search the Claude prompt history and open that prompt's session"
+contexts = ["global", "workspace", "pane"]
+command = ["sh", "-c", "exec \"${HERDR_BIN_PATH:-herdr}\" plugin pane open --plugin session-jump --entrypoint picker --placement overlay --focus"]
